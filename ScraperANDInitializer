@@ -1,115 +1,76 @@
-# Leicester City 24/25 - Passing Network & Graph Theory Analysis #
-
-# Denpendencies: pip install scraperfc networkx pandas numpy matplotlib mplsoccer
-
-import scraperfc #爬虫
-import networkx as nx 
-import numpy as np 
-import pandas as pd 
-#import matplotlib.pyplot as plt
-#from matplotlib.colors import LinearSegmentedColormap
-#from mplsoccer import Pitch, FontManager
-import warnings 
+# Leicester City Passing Vectors Extractor (DEBUG VERSION)
+import soccerdata as sd
+import pandas as pd
+import warnings
 
 warnings.filterwarnings('ignore')
 
-# TASK 1: DATA EXTRACTION
-#
+def get_passing_data(match_url):
+    print("\n" + "="*50)
+    print("🚀 SCENE 1: FETCHING RAW DATA 🚀")
+    print("="*50)
 
-class NetworkAnalysis:
-    def __init__(self):
-        self.scraper = scraperfc.Whoscored()
-        self.raw_events = None #二维表
-        self.pass_events = None #二维表
-        self.team_name = None 
-        self.player = {} #哈希表{player_id: player_name}
-        self.player_positions = {} #{player_id: (avg_x, avg_y)}
-        self.pass_matrix = None 
-        self.graph = None #有向图
-    #
+    # 1. 获取比赛 ID
+    try:
+        match_id = int(match_url.split('/matches/')[1].split('/')[0])
+        print(f"成功解析比赛 ID: {match_id}")
+    except Exception as e:
+        print("网址格式不正确，请确保是 WhoScored 的比赛链接！")
+        return
 
-    # STEP 1:Scrape match data from WhoScored via ScraperFC
-    #
+    print("[1/2] Checking schedule cache (Bypassing Cloudflare...)")
+    ws = sd.WhoScored(leagues="ENG-Premier League", seasons="2425")
+    
+    print(f"[2/2] Fetching ALL Event Data for Match ID {match_id}...")
+    try:
+        events = ws.read_events(match_id=[match_id])
+    except Exception as e:
+        print(f"抓取失败: {e}")
+        return
 
-    def scrape_match_data(self, match_url: str, team: str = "Leicester"):
-        self.team_name = team
-        print(f"[1/6] Scraping match data from WhoScored...")
-        print(f"    URL: {match_url}")
-        print(f"    Target team: {team}")
+    # 将多层索引展平，变成普通的二维表
+    df = events.reset_index()
+
+
+    print("\n" + "="*50)
+    print("RAW DATA INSPECTION")
+    print("="*50)
+    
+    all_columns = df.columns.tolist()
+    print(f"一共发现了 {len(all_columns)} 列参数，精确名称如下：")
+    print(all_columns)
+    
+    raw_output = f'RAW_match_{match_id}_events.csv'
+    df.to_csv(raw_output, index=False, encoding='utf-8-sig')
+    print(f"\n已将没有任何过滤的原始数据保存到指定路径：{raw_output}")
+
+
+    print("\n" + "="*50)
+    print("尝试提取莱斯特城传球数据... ")
+    print("="*50)
+    
+    try:
+        # 智能匹配列名
+        team_col = 'team' if 'team' in df.columns else df.columns[df.columns.str.contains('team', case=False)][0]
+        type_col = 'type' if 'type' in df.columns else df.columns[df.columns.str.contains('type', case=False)][0]
+        outcome_col = 'outcomeType' if 'outcomeType' in df.columns else df.columns[df.columns.str.contains('outcome', case=False)][0]
         
-        try:
-            self.raw_events = self.scraper.scrape_match(match_url)
-            print(f"    Total events scraped: {len(self.raw_events)}")
+        is_leicester = df[team_col].astype(str).str.contains('Leicester', case=False, na=False)
+        is_pass = df[type_col].astype(str).str.contains('Pass', case=False, na=False)
+        is_successful = df[outcome_col].astype(str).str.contains('Successful|Success|1', case=False, na=False)
         
-        except Exception as e:
-            print(f"    Error during scraping: {e}")
-            self.raw_events = None
-            return
+        pass_df = df[is_leicester & is_pass & is_successful].copy()
+        print(f"提取成功！共找到 {len(pass_df)} 脚成功的传球。")
         
-        finally:
-            try:
-                self.scraper.close()
-            except:
-                pass
-        self._clean_scraped_data()
+        # 保存过滤后的干净传球数据
+        filtered_output = r"C:\Users\86185\Desktop\LEI\CLEAN_Leicester_{match_id}_passes.csv".format(match_id=match_id)
+        pass_df.to_csv(filtered_output, index=False, encoding='utf-8-sig')
+        print(f"干净的传球坐标数据已保存至：{filtered_output}")
+        
+    except Exception as e:
+        print(f"\n自动过滤失败了，原因是找不到对应的参数名: {e}")
 
-    def _clean_scraped_data(self):
-        if self.raw_events is None:
-            print(f"    No data to clean.")
-            return
-        
-        print(f"[2/6] Cleaning and structuring scraped data...")
 
-        # Make a copy of the raw events to work with
-        df = self.raw_events.copy()
-        # Standardize column names
-        col_map = {}
-        for c in df.columns:
-            cl = c.lower().strip()#小写去空格
-            if cl in ('team', 'teamname', 'team_name'):
-                col_map[c] = 'team'
-            elif cl in ('player', 'playername', 'player_name'):
-                col_map[c] = 'player_name'
-            elif cl in ('playerid', 'player_id'):
-                col_map[c] = 'player_id'
-            elif cl in ('type', 'eventtype', 'event_type'):
-                col_map[c] = 'event_type'
-            elif cl == "x":
-                col_map[c] = 'start_x'
-            elif cl == "y":
-                col_map[c] = 'start_y'
-            elif cl in ('endx', 'end_x'):
-                col_map[c] = 'end_x'
-            elif cl in ('endy', 'end_y'):
-                col_map[c] = 'end_y'
-            elif cl in ('receuver', 'pass_recipient', 'recipient'):
-                col_map[c] = 'recipient'
-            elif cl in ('outcome', 'pass_outcome', 'outcome_type'):
-                col_map[c] = 'outcome'
-            elif cl in ('min', 'minute', 'time_minute'):
-                col_map[c] = 'minute'
-        df.rename(columns=col_map, inplace=True)
-
-        # filter for the target team
-        if 'team' in df.columns:
-            team_mask = df['team'].str.contains(self.team_name, case=False, na=False)
-            df = df[team_mask].copy()
-            print(f"[2/6] Filtered to {len(df)} events for '{self.team_name}'.")
-        # filter for passes only
-        if 'event_type' in df.columns:
-            pass_mask = df['event_type'].str.contains('Pass', case=False, na=False)
-            df = df[pass_mask].copy()
-            print(f"    {len(df)} pass events found.")
-        # filter for successful passes only
-        if 'outcome' in df.columns:
-            success_mask = df['outcome'].str.contains('Successful|Success|1', case=False, na=False)
-            df = df[success_mask].copy()
-            print(f"    {len(df)} successful pass events found.")
-        
-        # keep only valid rows
-        coord_cols = ['start_x', 'start_y', 'end_x', 'end_y']
-        for c in coord_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors='coerce')
-        df.dropna(subset=coord_cols, inplace=True)
-        self.pass_events = df.reset_index(drop=True)
+if __name__ == "__main__":
+    TARGET_URL = "https://www.whoscored.com/matches/1821238/live/england-premier-league-2024-2025-leicester-wolves"
+    get_passing_data(TARGET_URL)
