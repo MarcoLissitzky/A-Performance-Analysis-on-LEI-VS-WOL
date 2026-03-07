@@ -15,3 +15,8 @@ TODO：理解算法并上传；撰写分析。<br>
 <img width="1651" height="1369" alt="leicester_transition_heatmap" src="https://github.com/user-attachments/assets/27e7923d-216f-47a4-bde9-e8c82e139736" />
 
 ### 分析 <br>
+
+## 期望威胁
+<img width="3165" height="1451" alt="leicester_tactical_05_xT" src="https://github.com/user-attachments/assets/4df1d393-651b-410a-8c76-89f53ac535d4" />
+
+<img width="3582" height="2931" alt="leicester_tactical_09_dashboard" src="https://github.com/user-attachments/assets/190c973d-01fe-40cc-8e0a-71929195bc04" />
